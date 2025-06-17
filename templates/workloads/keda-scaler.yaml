@@ -1,0 +1,17 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-scaler
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "nimbusguard.fullname" . }}-consumer-workload
+  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
+  pollingInterval: {{ .Values.keda.scaledObject.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.scaledObject.cooldownPeriod }}
+  triggers:
+    {{- toYaml .Values.keda.scaledObject.triggers | nindent 4 }}
+{{- end }}

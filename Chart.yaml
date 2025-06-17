@@ -1,0 +1,18 @@
+apiVersion: v2
+name: nimbusguard
+description: NimbusGuard - Kubernetes Operator and Workloads for Event-Driven Scaling
+version: 0.1.0
+appVersion: "1.0.0"
+type: application
+keywords:
+  - operator
+  - keda
+  - kafka
+  - scaling
+home: https://github.com/your-org/nimbusguard
+sources:
+  - https://github.com/your-org/nimbusguard
+maintainers:
+  - name: NimbusGuard Team
+    email: team@example.com
+icon: https://raw.githubusercontent.com/your-org/nimbusguard/main/logo.png

@@ -1,0 +1,63 @@
+# Default values for NimbusGuard Helm chart.
+# This file is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+crd:
+  enabled: true
+
+operator:
+  enabled: true
+  image:
+    repository: your-org/nimbusguard-operator
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+consumerWorkload:
+  enabled: true
+  image:
+    repository: your-org/consumer-workload
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+kafka:
+  enabled: true
+  image:
+    repository: bitnami/kafka
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+keda:
+  enabled: true
+  scaledObject:
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    pollingInterval: 30
+    cooldownPeriod: 300
+    triggers: [] # Define triggers as needed
+
+loadGenerator:
+  enabled: false
+  image:
+    repository: your-org/load-generator
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

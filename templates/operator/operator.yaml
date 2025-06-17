@@ -1,0 +1,35 @@
+{{- if .Values.operator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-operator
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "1"
+spec:
+  replicas: {{ .Values.operator.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "nimbusguard.name" . }}
+      app.kubernetes.io/component: operator
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.labels" . | nindent 8 }}
+        app.kubernetes.io/component: operator
+    spec:
+      containers:
+        - name: operator
+          image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
+          imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+          resources:
+            {{- toYaml .Values.operator.resources | nindent 12 }}
+      nodeSelector:
+        {{- toYaml .Values.operator.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.operator.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.operator.affinity | nindent 8 }}
+{{- end }}

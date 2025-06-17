@@ -1,0 +1,14 @@
+Thank you for installing NimbusGuard!
+
+To check the status of your deployment:
+  kubectl get all -l app.kubernetes.io/instance={{ .Release.Name }}
+
+To view operator logs:
+  kubectl logs deployment/{{ include "nimbusguard.fullname" . }}-operator
+
+If you enabled Prometheus, metrics are exposed at /metrics on the consumer workload and operator pods.
+
+If you enabled Loki and Tempo, logs and traces are available in Grafana (if installed).
+
+For more information, visit:
+  https://github.com/your-org/nimbusguard

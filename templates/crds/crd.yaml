@@ -1,0 +1,36 @@
+{{- if .Values.crd.enabled }}
+{{- /* Install CRD before other resources using Helm hook */ -}}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: scalingevents.nimbusguard.io
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": crd-install
+    "helm.sh/hook-weight": "0"
+spec:
+  group: nimbusguard.io
+  names:
+    kind: ScalingEvent
+    listKind: ScalingEventList
+    plural: scalingevents
+    singular: scalingevent
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                eventType:
+                  type: string
+                payload:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+{{- end }}

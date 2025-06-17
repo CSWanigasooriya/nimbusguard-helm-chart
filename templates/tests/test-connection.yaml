@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-test-connection
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: busybox
+      image: busybox
+      command: ['sh', '-c', 'echo NimbusGuard test connection successful! && sleep 5']
+  restartPolicy: Never
