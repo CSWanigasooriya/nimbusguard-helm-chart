@@ -1,17 +1,96 @@
 {{- if .Values.keda.enabled }}
+{{/* KEDA Kafka Trigger Authentication */}}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ .Values.keda.triggerAuthentication.name }}
+  namespace: {{ include "nimbusguard.namespace" . }}
+  labels:
+    {{- include "nimbusguard.kedaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  secretTargetRef: {{ toYaml .Values.keda.triggerAuthentication.secretTargetRef | nindent 4 }}
+---
+{{/* Network Policy for KEDA Metrics Server */}}
+{{- if .Values.keda.networkPolicies.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-keda-metrics-network-policy
+  namespace: {{ .Values.keda.networkPolicies.kedaNamespace }}
+  labels:
+    {{- include "nimbusguard.kedaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: keda-operator-metrics-apiserver
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "nimbusguard.namespace" . }}
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+{{/* Network Policy for KEDA Operator */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-keda-operator-network-policy
+  namespace: {{ .Values.keda.networkPolicies.kedaNamespace }}
+  labels:
+    {{- include "nimbusguard.kedaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: keda-operator
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ include "nimbusguard.namespace" . }}
+      ports:
+        - protocol: TCP
+          port: 9666
+---
+{{- end }}
+{{/* KEDA ScaledObject */}}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: {{ include "nimbusguard.fullname" . }}-scaler
+  name: {{ .Values.keda.scaledObject.name }}
+  namespace: {{ include "nimbusguard.namespace" . }}
   labels:
-    {{- include "nimbusguard.labels" . | nindent 4 }}
+    {{- include "nimbusguard.kedaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
 spec:
   scaleTargetRef:
-    name: {{ include "nimbusguard.fullname" . }}-consumer-workload
-  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
-  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
+    name: {{ .Values.keda.scaledObject.scaleTargetRef.name }}
+    kind: {{ .Values.keda.scaledObject.scaleTargetRef.kind }}
   pollingInterval: {{ .Values.keda.scaledObject.pollingInterval }}
   cooldownPeriod: {{ .Values.keda.scaledObject.cooldownPeriod }}
+  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
   triggers:
-    {{- toYaml .Values.keda.scaledObject.triggers | nindent 4 }}
+    {{- if .Values.keda.scaledObject.triggers.kafka.enabled }}
+    - type: kafka
+      metadata:
+        bootstrapServers: {{ .Values.keda.scaledObject.triggers.kafka.metadata.bootstrapServers | quote }}
+        consumerGroup: {{ .Values.keda.scaledObject.triggers.kafka.metadata.consumerGroup | quote }}
+        topic: {{ .Values.keda.scaledObject.triggers.kafka.metadata.topic | quote }}
+        lagThreshold: {{ .Values.keda.scaledObject.triggers.kafka.metadata.lagThreshold | quote }}
+        activationLagThreshold: {{ .Values.keda.scaledObject.triggers.kafka.metadata.activationLagThreshold | quote }}
+        offsetResetPolicy: {{ .Values.keda.scaledObject.triggers.kafka.metadata.offsetResetPolicy | quote }}
+        allowIdleConsumers: {{ .Values.keda.scaledObject.triggers.kafka.metadata.allowIdleConsumers | quote }}
+        scaleToZeroOnInvalidOffset: {{ .Values.keda.scaledObject.triggers.kafka.metadata.scaleToZeroOnInvalidOffset | quote }}
+      authenticationRef:
+        name: {{ .Values.keda.triggerAuthentication.name }}
+    {{- end }}
 {{- end }}

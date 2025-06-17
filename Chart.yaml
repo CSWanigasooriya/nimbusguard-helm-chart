@@ -1,18 +1,67 @@
 apiVersion: v2
 name: nimbusguard
-description: NimbusGuard - Kubernetes Operator and Workloads for Event-Driven Scaling
+description: NimbusGuard - AI-Powered Kubernetes Resilience Platform with Event-Driven Scaling and proper resource ordering
 version: 0.1.0
 appVersion: "1.0.0"
 type: application
+
 keywords:
   - operator
   - keda
   - kafka
   - scaling
-home: https://github.com/your-org/nimbusguard
+  - intelligent-scaling
+  - event-driven
+  - prometheus
+  - monitoring
+  - ai-powered
+  - reinforcement-learning
+
+home: https://github.com/CSWanigasooriya/nimbusguard
 sources:
-  - https://github.com/your-org/nimbusguard
+  - https://github.com/CSWanigasooriya/nimbusguard
+
 maintainers:
-  - name: NimbusGuard Team
-    email: team@example.com
-icon: https://raw.githubusercontent.com/your-org/nimbusguard/main/logo.png
+  - name: Chamath Wanigasooriya
+    email: chamathwanigasooriya@gmail.com
+
+icon: https://raw.githubusercontent.com/CSWanigasooriya/nimbusguard/main/logo.png
+
+annotations:
+  # Resource ordering strategy using Helm hooks
+  category: Operators
+  licenses: MIT
+  # Hook weights explanation:
+  # -10: CRDs (pre-install/pre-upgrade)
+  # -5:  Operator resources (post-install/post-upgrade) 
+  # 0:   Wait job for operator readiness
+  # 5:   Workloads (post-install/post-upgrade)
+
+# Chart Dependencies - These will be installed automatically
+dependencies:
+  # KEDA for event-driven scaling
+  - name: keda
+    version: "2.15.1"
+    repository: "https://kedacore.github.io/charts"
+    condition: dependencies.keda.enabled
+    
+  # Prometheus for metrics collection
+  - name: prometheus
+    version: "25.27.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: dependencies.prometheus.enabled
+    
+  # Grafana for visualization
+  - name: grafana
+    version: "8.5.1"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: dependencies.grafana.enabled
+    
+  # Alloy (new Grafana Agent) for observability
+  - name: alloy
+    version: "0.9.1"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: dependencies.alloy.enabled
+
+# Minimum Kubernetes version
+kubeVersion: ">=1.19.0"

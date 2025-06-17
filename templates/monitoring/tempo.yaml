@@ -1,0 +1,169 @@
+{{- if .Values.monitoring.tempo.enabled }}
+{{/* Custom Tempo deployment when not using chart dependency */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-tempo-config
+  namespace: {{ .Values.monitoring.tempo.namespace | default "monitoring" }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tempo
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+data:
+  tempo.yml: |
+    server:
+      http_listen_port: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+      log_level: {{ .Values.monitoring.tempo.config.logLevel | default "info" }}
+
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:{{ .Values.monitoring.tempo.config.otlpGrpcPort | default 4317 }}
+            http:
+              endpoint: 0.0.0.0:{{ .Values.monitoring.tempo.config.otlpHttpPort | default 4318 }}
+        jaeger:
+          protocols:
+            thrift_http:
+              endpoint: 0.0.0.0:{{ .Values.monitoring.tempo.config.jaegerHttpPort | default 14268 }}
+            grpc:
+              endpoint: 0.0.0.0:{{ .Values.monitoring.tempo.config.jaegerGrpcPort | default 14250 }}
+        zipkin:
+          endpoint: 0.0.0.0:{{ .Values.monitoring.tempo.config.zipkinPort | default 9411 }}
+
+    ingester:
+      trace_idle_period: {{ .Values.monitoring.tempo.config.traceIdlePeriod | default "10s" }}
+      max_block_duration: {{ .Values.monitoring.tempo.config.maxBlockDuration | default "5m" }}
+
+    compactor:
+      compaction:
+        block_retention: {{ .Values.monitoring.tempo.config.blockRetention | default "1h" }}
+
+    storage:
+      trace:
+        backend: {{ .Values.monitoring.tempo.config.backend | default "local" }}
+        wal:
+          path: {{ .Values.monitoring.tempo.config.walPath | default "/tmp/tempo/wal" }}
+        local:
+          path: {{ .Values.monitoring.tempo.config.localPath | default "/tmp/tempo/blocks" }}
+
+    metrics_generator:
+      registry:
+        external_labels:
+          source: tempo
+          cluster: nimbusguard
+      storage:
+        path: {{ .Values.monitoring.tempo.config.metricsPath | default "/tmp/tempo/generator/wal" }}
+        remote_write:
+          - url: {{ .Values.monitoring.prometheus.url | default "http://prometheus.monitoring.svc.cluster.local:9090" }}/api/v1/write
+            send_exemplars: true
+---
+{{- if .Values.monitoring.tempo.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-tempo
+  namespace: {{ .Values.monitoring.tempo.namespace | default "monitoring" }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tempo
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.monitoring.tempo.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: tempo
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tempo
+    spec:
+      containers:
+        - name: tempo
+          image: "{{ .Values.monitoring.tempo.image.repository | default "grafana/tempo" }}:{{ .Values.monitoring.tempo.image.tag | default "2.2.0" }}"
+          imagePullPolicy: {{ .Values.monitoring.tempo.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - '-config.file=/etc/tempo/tempo.yml'
+          ports:
+            - containerPort: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+              name: http
+            - containerPort: {{ .Values.monitoring.tempo.config.otlpGrpcPort | default 4317 }}
+              name: otlp-grpc
+            - containerPort: {{ .Values.monitoring.tempo.config.otlpHttpPort | default 4318 }}
+              name: otlp-http
+            - containerPort: {{ .Values.monitoring.tempo.config.jaegerHttpPort | default 14268 }}
+              name: jaeger-http
+            - containerPort: {{ .Values.monitoring.tempo.config.jaegerGrpcPort | default 14250 }}
+              name: jaeger-grpc
+            - containerPort: {{ .Values.monitoring.tempo.config.zipkinPort | default 9411 }}
+              name: zipkin
+          volumeMounts:
+            - name: tempo-config
+              mountPath: /etc/tempo
+            - name: tempo-storage
+              mountPath: /tmp/tempo
+          resources:
+            {{- toYaml (.Values.monitoring.tempo.resources | default (dict "requests" (dict "cpu" "100m" "memory" "128Mi") "limits" (dict "cpu" "500m" "memory" "512Mi"))) | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+            initialDelaySeconds: 45
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+            initialDelaySeconds: 45
+      volumes:
+        - name: tempo-config
+          configMap:
+            name: {{ include "nimbusguard.fullname" . }}-tempo-config
+        - name: tempo-storage
+          {{- if .Values.monitoring.tempo.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "nimbusguard.fullname" . }}-tempo-storage
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-tempo
+  namespace: {{ .Values.monitoring.tempo.namespace | default "monitoring" }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tempo
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  type: {{ .Values.monitoring.tempo.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: tempo
+  ports:
+    - name: http
+      port: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+      targetPort: {{ .Values.monitoring.tempo.config.httpPort | default 3200 }}
+    - name: otlp-grpc
+      port: {{ .Values.monitoring.tempo.config.otlpGrpcPort | default 4317 }}
+      targetPort: {{ .Values.monitoring.tempo.config.otlpGrpcPort | default 4317 }}
+    - name: otlp-http
+      port: {{ .Values.monitoring.tempo.config.otlpHttpPort | default 4318 }}
+      targetPort: {{ .Values.monitoring.tempo.config.otlpHttpPort | default 4318 }}
+    - name: jaeger-http
+      port: {{ .Values.monitoring.tempo.config.jaegerHttpPort | default 14268 }}
+      targetPort: {{ .Values.monitoring.tempo.config.jaegerHttpPort | default 14268 }}
+    - name: jaeger-grpc
+      port: {{ .Values.monitoring.tempo.config.jaegerGrpcPort | default 14250 }}
+      targetPort: {{ .Values.monitoring.tempo.config.jaegerGrpcPort | default 14250 }}
+    - name: zipkin
+      port: {{ .Values.monitoring.tempo.config.zipkinPort | default 9411 }}
+      targetPort: {{ .Values.monitoring.tempo.config.zipkinPort | default 9411 }}
+{{- end }}
+{{- end }}

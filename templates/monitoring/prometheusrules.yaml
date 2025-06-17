@@ -1,0 +1,115 @@
+{{- if or .Values.monitoring.prometheus.enabled .Values.dependencies.prometheus.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-alerts
+  namespace: {{ include "nimbusguard.namespace" . }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  groups:
+  - name: nimbusguard.alerts
+    rules:
+    # Operator Health Alerts
+    - alert: NimbusGuardOperatorDown
+      expr: up{job="{{ include "nimbusguard.fullname" . }}-operator"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: operator
+      annotations:
+        summary: "NimbusGuard Operator is down"
+        description: "NimbusGuard Operator has been down for more than 1 minute."
+        
+    - alert: NimbusGuardOperatorHighMemory
+      expr: container_memory_usage_bytes{pod=~"{{ include "nimbusguard.fullname" . }}-operator.*"} / container_spec_memory_limit_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        component: operator
+      annotations:
+        summary: "NimbusGuard Operator high memory usage"
+        description: "NimbusGuard Operator memory usage is above 90% for more than 5 minutes."
+        
+    # Consumer Workload Alerts  
+    - alert: ConsumerWorkloadDown
+      expr: up{job="{{ include "nimbusguard.fullname" . }}-consumer-workload"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        component: consumer-workload
+      annotations:
+        summary: "Consumer Workload is down"
+        description: "Consumer Workload has been down for more than 2 minutes."
+        
+    - alert: ConsumerWorkloadHighCPU
+      expr: rate(container_cpu_usage_seconds_total{pod=~"{{ include "nimbusguard.fullname" . }}-consumer-workload.*"}[5m]) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        component: consumer-workload
+      annotations:
+        summary: "Consumer Workload high CPU usage"
+        description: "Consumer Workload CPU usage is above 80% for more than 10 minutes."
+        
+    # Kafka Alerts
+    {{- if .Values.kafka.enabled }}
+    - alert: KafkaDown
+      expr: up{job="{{ include "nimbusguard.fullname" . }}-kafka"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: kafka
+      annotations:
+        summary: "Kafka is down"
+        description: "Kafka has been down for more than 1 minute."
+    {{- end }}
+    
+    # KEDA Scaling Alerts
+    {{- if .Values.keda.enabled }}
+    - alert: KEDAScaledObjectUnhealthy
+      expr: keda_scaledobject_errors_total > 0
+      for: 5m
+      labels:
+        severity: warning
+        component: keda
+      annotations:
+        summary: "KEDA ScaledObject has errors"
+        description: "KEDA ScaledObject {{ "{{" }} $labels.scaledobject {{ "}}" }} has reported errors."
+    {{- end }}
+    
+    # AI Decision Engine Alerts
+    - alert: AIDecisionEngineStuck
+      expr: increase(nimbusguard_scaling_decisions_total[30m]) == 0 and up{job="{{ include "nimbusguard.fullname" . }}-operator"} == 1
+      for: 30m
+      labels:
+        severity: warning
+        component: ai-engine
+      annotations:
+        summary: "AI Decision Engine appears stuck"
+        description: "No scaling decisions have been made in the last 30 minutes despite operator being up."
+        
+    - alert: HighScalingFrequency
+      expr: rate(nimbusguard_scaling_decisions_total[5m]) > 0.1
+      for: 15m
+      labels:
+        severity: warning
+        component: ai-engine
+      annotations:
+        summary: "Very frequent scaling decisions"
+        description: "Scaling decisions are being made very frequently, which may indicate instability."
+
+  - name: nimbusguard.recording.rules
+    rules:
+    # Recording rules for better performance of complex queries
+    - record: nimbusguard:cpu_usage_percent
+      expr: rate(container_cpu_usage_seconds_total{namespace="{{ include "nimbusguard.namespace" . }}"}[5m]) * 100
+      
+    - record: nimbusguard:memory_usage_percent  
+      expr: container_memory_usage_bytes{namespace="{{ include "nimbusguard.namespace" . }}"} / container_spec_memory_limit_bytes * 100
+      
+    - record: nimbusguard:scaling_decisions_rate
+      expr: rate(nimbusguard_scaling_decisions_total[5m])
+{{- end }}

@@ -1,0 +1,41 @@
+{{- if and .Values.operator.enabled .Values.operator.waitForReady }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-operator-wait
+  namespace: {{ include "nimbusguard.namespace" . }}
+  labels:
+    {{- include "nimbusguard.operatorLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.waitHookAnnotations" . | nindent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.operatorLabels" . | nindent 8 }}
+        job: operator-wait
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: wait-for-operator
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          echo "Waiting for operator deployment to be ready..."
+          kubectl wait --for=condition=available \
+            --timeout={{ .Values.operator.waitTimeout }} \
+            deployment/{{ include "nimbusguard.fullname" . }}-operator \
+            -n {{ include "nimbusguard.namespace" . }}
+          echo "Operator deployment is ready!"
+          
+          echo "Waiting for operator service to be ready..."
+          kubectl wait --for=jsonpath='{.spec.clusterIP}' \
+            --timeout=60s \
+            service/{{ include "nimbusguard.fullname" . }}-operator \
+            -n {{ include "nimbusguard.namespace" . }}
+          echo "Operator service is ready!"
+          
+          echo "NimbusGuard operator is fully ready for workload deployment!"
+{{- end }}

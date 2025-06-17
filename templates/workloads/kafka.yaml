@@ -1,29 +1,98 @@
 {{- if .Values.kafka.enabled }}
+{{/* Storage Class for Kafka (only if persistence is enabled) */}}
+{{- if .Values.kafka.persistence.enabled }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ .Values.kafka.persistence.storageClass }}
+  labels:
+    {{- include "nimbusguard.kafkaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+{{/* Kafka Persistent Volume (only if persistence is enabled) */}}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-kafka-data-pv
+  labels:
+    {{- include "nimbusguard.kafkaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.kafka.persistence.size }}
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.kafka.persistence.storageClass }}
+  local:
+    path: {{ .Values.kafka.persistence.path }}
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - {{ .Values.kafka.persistence.nodeAffinity.hostname }}
+---
+{{- end }}
+{{/* Kafka StatefulSet */}}
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "nimbusguard.fullname" . }}-kafka
+  namespace: {{ include "nimbusguard.namespace" . }}
   labels:
-    {{- include "nimbusguard.labels" . | nindent 4 }}
+    {{- include "nimbusguard.kafkaLabels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "3"
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
 spec:
+  serviceName: {{ .Values.kafka.statefulSet.serviceName }}
   replicas: {{ .Values.kafka.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "nimbusguard.name" . }}
-      app.kubernetes.io/component: kafka
+      {{- include "nimbusguard.kafkaSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "nimbusguard.labels" . | nindent 8 }}
-        app.kubernetes.io/component: kafka
+        {{- include "nimbusguard.kafkaLabels" . | nindent 8 }}
     spec:
       containers:
         - name: kafka
           image: "{{ .Values.kafka.image.repository }}:{{ .Values.kafka.image.tag }}"
           imagePullPolicy: {{ .Values.kafka.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.kafka.service.port }}
+              name: kafka
+          env:
+            - name: KAFKA_CFG_NODE_ID
+              value: {{ .Values.kafka.config.nodeId | quote }}
+            - name: KAFKA_CFG_PROCESS_ROLES
+              value: {{ .Values.kafka.config.processRoles | quote }}
+            - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+              value: {{ .Values.kafka.config.controllerQuorumVoters | quote }}
+            - name: KAFKA_CFG_LISTENERS
+              value: {{ .Values.kafka.config.listeners | quote }}
+            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+              value: {{ .Values.kafka.config.listenerSecurityProtocolMap | quote }}
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: {{ .Values.kafka.config.advertisedListeners | quote }}
+            - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+              value: {{ .Values.kafka.config.controllerListenerNames | quote }}
+            - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+              value: {{ .Values.kafka.config.interBrokerListenerName | quote }}
+            - name: ALLOW_PLAINTEXT_LISTENER
+              value: {{ .Values.kafka.config.allowPlaintextListener | quote }}
+            - name: KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE
+              value: {{ .Values.kafka.config.autoCreateTopicsEnable | quote }}
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/kafka
           resources:
             {{- toYaml .Values.kafka.resources | nindent 12 }}
       nodeSelector:
@@ -32,4 +101,42 @@ spec:
         {{- toYaml .Values.kafka.tolerations | nindent 8 }}
       affinity:
         {{- toYaml .Values.kafka.affinity | nindent 8 }}
+      volumes:
+        - name: data
+          {{- if .Values.kafka.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "nimbusguard.fullname" . }}-kafka-data-pvc
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- if .Values.kafka.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: {{ include "nimbusguard.fullname" . }}-kafka-data-pvc
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.kafka.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.kafka.persistence.size }}
+{{- end }}
+---
+{{/* Kafka Service */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-kafka
+  namespace: {{ include "nimbusguard.namespace" . }}
+  labels:
+    {{- include "nimbusguard.kafkaLabels" . | nindent 4 }}
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+spec:
+  type: {{ .Values.kafka.service.type }}
+  selector:
+    {{- include "nimbusguard.kafkaSelectorLabels" . | nindent 4 }}
+  ports:
+    - port: {{ .Values.kafka.service.port }}
+      targetPort: {{ .Values.kafka.service.targetPort }}
+      name: {{ .Values.kafka.service.name }}
 {{- end }}

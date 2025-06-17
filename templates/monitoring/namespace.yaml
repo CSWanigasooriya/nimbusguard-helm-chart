@@ -1,0 +1,12 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.monitoring.namespace }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    name: {{ .Values.monitoring.namespace }}
+    app.kubernetes.io/part-of: nimbusguard-monitoring
+  annotations:
+    {{- include "nimbusguard.workloadHookAnnotations" . | nindent 4 }}
+{{- end }}
