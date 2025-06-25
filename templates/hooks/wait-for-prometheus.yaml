@@ -1,0 +1,66 @@
+{{- if and .Values.keda.enabled .Values.monitoring.prometheus.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "nimbusguard.fullname" . }}-wait-for-prometheus"
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: hook
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.labels" . | nindent 8 }}
+        component: hook
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: wait-for-prometheus
+        image: curlimages/curl:8.5.0
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for Prometheus to be ready..."
+          MAX_ATTEMPTS=60
+          ATTEMPT=1
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking Prometheus health..."
+            
+            if curl -f -s "http://prometheus.{{ .Values.namespace.name }}.svc.cluster.local:9090/-/ready" > /dev/null; then
+              echo "✅ Prometheus is ready!"
+              
+              # Test actual query capability
+              echo "Testing Prometheus query capability..."
+              if curl -f -s "http://prometheus.{{ .Values.namespace.name }}.svc.cluster.local:9090/api/v1/query?query=up" > /dev/null; then
+                echo "✅ Prometheus query API is working!"
+                exit 0
+              else
+                echo "⚠️  Prometheus query API not ready yet..."
+              fi
+            else
+              echo "⚠️  Prometheus not ready yet..."
+            fi
+            
+            echo "Waiting 5 seconds before next attempt..."
+            sleep 5
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          
+          echo "❌ Prometheus did not become ready within expected time"
+          exit 1
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
+  backoffLimit: 3
+  activeDeadlineSeconds: 600  # 10 minutes max
+{{- end }} 

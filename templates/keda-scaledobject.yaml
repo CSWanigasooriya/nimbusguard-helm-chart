@@ -1,0 +1,46 @@
+{{- if and .Values.keda.enabled .Values.keda.scaledObject.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.keda.scaledObject.name }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: keda
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  scaleTargetRef:
+    name: consumer
+  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
+  pollingInterval: {{ .Values.keda.scaledObject.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.scaledObject.cooldownPeriod }}
+  advanced:
+    # Intelligent scaling behavior
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: {{ .Values.keda.scaledObject.scaleUp.stabilizationWindowSeconds }}
+          policies:
+          - type: Percent
+            value: {{ .Values.keda.scaledObject.scaleUp.maxPercentValue }}
+            periodSeconds: {{ .Values.keda.scaledObject.scaleUp.periodSeconds }}
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.keda.scaledObject.scaleDown.stabilizationWindowSeconds }}
+          policies:
+          - type: Percent
+            value: {{ .Values.keda.scaledObject.scaleDown.maxPercentValue }}
+            periodSeconds: {{ .Values.keda.scaledObject.scaleDown.periodSeconds }}
+  triggers:
+    {{- range .Values.keda.scaledObject.triggers }}
+    - type: {{ .type }}
+      metadata:
+        serverAddress: {{ include "nimbusguard.prometheusAddress" $ }}
+        metricName: {{ .name }}
+        threshold: {{ .threshold | quote }}
+        query: {{ .query | quote }}
+    {{- end }}
+{{- end }} 

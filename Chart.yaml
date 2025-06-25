@@ -1,0 +1,29 @@
+apiVersion: v2
+name: nimbusguard
+description: A comprehensive cloud-native monitoring and auto-scaling platform with eBPF instrumentation
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - monitoring
+  - autoscaling
+  - observability
+  - keda
+  - prometheus
+  - grafana
+  - ebpf
+
+home: https://github.com/CSWanigasooriya/nimbusguard
+sources:
+  - https://github.com/CSWanigasooriya/nimbusguard
+
+maintainers:
+  - name: NimbusGuard Team
+    email: team@nimbusguard.io
+
+dependencies:
+  - name: keda
+    version: "2.15.0"
+    repository: "https://kedacore.github.io/charts"
+    condition: keda.enabled 

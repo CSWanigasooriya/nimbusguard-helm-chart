@@ -1,0 +1,96 @@
+{{- if .Values.consumer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    app.kubernetes.io/name: consumer
+    component: consumer
+spec:
+  replicas: {{ .Values.consumer.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: consumer
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.labels" . | nindent 8 }}
+        app.kubernetes.io/name: consumer
+        component: monitoring
+      annotations:
+        # Prometheus scraping annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.consumer.service.port }}"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: consumer
+        image: {{ include "nimbusguard.image" (dict "repository" .Values.consumer.image.repository "tag" .Values.consumer.image.tag "Values" .Values) }}
+        imagePullPolicy: {{ .Values.consumer.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.consumer.service.port }}
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Values.consumer.otel.serviceName | quote }}
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.name={{ .Values.consumer.otel.serviceName }},service.version={{ .Values.consumer.otel.version }}"
+        - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+          value: {{ .Values.consumer.otel.tracesEndpoint | quote }}
+        - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+          value: {{ .Values.consumer.otel.metricsEndpoint | quote }}
+        - name: OTEL_LOGS_EXPORTER
+          value: "otlp"
+        - name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+          value: {{ .Values.consumer.otel.logsEndpoint | quote }}
+        {{- if .Values.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.consumer.service.port }}
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+        {{- end }}
+        {{- if .Values.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: {{ .Values.consumer.service.port }}
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.consumer.resources | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    app.kubernetes.io/name: consumer
+    component: consumer
+spec:
+  selector:
+    app.kubernetes.io/name: consumer
+  ports:
+  - name: http
+    port: {{ .Values.consumer.service.port }}
+    targetPort: {{ .Values.consumer.service.port }}
+    protocol: TCP
+  type: {{ .Values.consumer.service.type }}
+{{- end }} 
