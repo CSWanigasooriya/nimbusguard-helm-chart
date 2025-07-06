@@ -1,0 +1,211 @@
+{{- if .Values.monitoring.kubeStateMetrics.enabled }}
+---
+# Kube State Metrics Service Account
+{{- if .Values.monitoring.kubeStateMetrics.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "nimbusguard.kubeStateMetrics.serviceAccountName" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+    app.kubernetes.io/component: exporter
+    app.kubernetes.io/part-of: nimbus-monitoring
+automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+{{- end }}
+---
+# Kube State Metrics RBAC
+{{- if .Values.monitoring.kubeStateMetrics.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-kube-state-metrics
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+rules:
+- apiGroups: [""]
+  resources:
+  - configmaps
+  - secrets
+  - nodes
+  - pods
+  - services
+  - resourcequotas
+  - replicationcontrollers
+  - limitranges
+  - persistentvolumeclaims
+  - persistentvolumes
+  - namespaces
+  - endpoints
+  verbs: ["list", "watch"]
+- apiGroups: ["apps"]
+  resources:
+  - statefulsets
+  - daemonsets
+  - deployments
+  - replicasets
+  verbs: ["list", "watch"]
+- apiGroups: ["batch"]
+  resources:
+  - cronjobs
+  - jobs
+  verbs: ["list", "watch"]
+- apiGroups: ["autoscaling"]
+  resources:
+  - horizontalpodautoscalers
+  verbs: ["list", "watch"]
+- apiGroups: ["authentication.k8s.io"]
+  resources:
+  - tokenreviews
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources:
+  - subjectaccessreviews
+  verbs: ["create"]
+- apiGroups: ["policy"]
+  resources:
+  - poddisruptionbudgets
+  verbs: ["list", "watch"]
+- apiGroups: ["certificates.k8s.io"]
+  resources:
+  - certificatesigningrequests
+  verbs: ["list", "watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources:
+  - storageclasses
+  - volumeattachments
+  verbs: ["list", "watch"]
+- apiGroups: ["admissionregistration.k8s.io"]
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs: ["list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources:
+  - networkpolicies
+  - ingresses
+  verbs: ["list", "watch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources:
+  - leases
+  verbs: ["list", "watch"]
+- apiGroups: ["discovery.k8s.io"]
+  resources:
+  - endpointslices
+  verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-kube-state-metrics
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "nimbusguard.fullname" . }}-kube-state-metrics
+subjects:
+- kind: ServiceAccount
+  name: {{ include "nimbusguard.kubeStateMetrics.serviceAccountName" . }}
+  namespace: {{ .Values.namespace.name }}
+{{- end }}
+---
+# Kube State Metrics Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-state-metrics
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  type: {{ .Values.monitoring.kubeStateMetrics.service.type }}
+  ports:
+    - port: {{ .Values.monitoring.kubeStateMetrics.service.ports.metrics }}
+      targetPort: 8080
+      protocol: TCP
+      name: http-metrics
+    - port: {{ .Values.monitoring.kubeStateMetrics.service.ports.telemetry }}
+      targetPort: 8081
+      protocol: TCP
+      name: telemetry
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: kube-state-metrics
+---
+# Kube State Metrics Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-state-metrics
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: kube-state-metrics
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: kube-state-metrics
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "nimbusguard.kubeStateMetrics.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: kube-state-metrics
+        image: "{{ .Values.monitoring.kubeStateMetrics.image.repository }}:{{ .Values.monitoring.kubeStateMetrics.image.tag }}"
+        imagePullPolicy: {{ .Values.monitoring.kubeStateMetrics.image.pullPolicy }}
+        args:
+        - --resources=certificatesigningrequests,configmaps,cronjobs,daemonsets,deployments,horizontalpodautoscalers,ingresses,jobs,leases,limitranges,mutatingwebhookconfigurations,namespaces,networkpolicies,nodes,persistentvolumeclaims,persistentvolumes,poddisruptionbudgets,pods,replicasets,replicationcontrollers,resourcequotas,secrets,services,statefulsets,storageclasses,validatingwebhookconfigurations,volumeattachments,endpointslices
+        - --telemetry-port=8081
+        - --port=8080
+        - --metric-denylist=kube_endpoint_address_available,kube_endpoint_address_not_ready
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        - containerPort: 8081
+          name: telemetry
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 8080
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          timeoutSeconds: 5
+        resources:
+          {{- toYaml .Values.monitoring.kubeStateMetrics.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

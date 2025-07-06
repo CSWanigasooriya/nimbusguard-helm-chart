@@ -1,17 +1,20 @@
 {{- if .Values.monitoring.prometheus.enabled }}
 ---
+# Prometheus Service Account
+{{- if .Values.monitoring.prometheus.serviceAccount.create }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: prometheus
+  name: {{ include "nimbusguard.prometheus.serviceAccountName" . }}
   namespace: {{ .Values.namespace.name }}
   labels:
     {{- include "nimbusguard.labels" . | nindent 4 }}
     component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "1"
+automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+{{- end }}
 ---
+# Prometheus RBAC
+{{- if .Values.monitoring.prometheus.rbac.create }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -19,25 +22,15 @@ metadata:
   labels:
     {{- include "nimbusguard.labels" . | nindent 4 }}
     component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "1"
 rules:
-- apiGroups: [""]
-  resources:
-  - nodes
-  - nodes/proxy
-  - services
-  - endpoints
-  - pods
-  verbs: ["get", "list", "watch"]
-- apiGroups:
-  - extensions
-  resources:
-  - ingresses
-  verbs: ["get", "list", "watch"]
-- nonResourceURLs: ["/metrics"]
-  verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes", "nodes/proxy", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["extensions"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -46,18 +39,17 @@ metadata:
   labels:
     {{- include "nimbusguard.labels" . | nindent 4 }}
     component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "1"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ include "nimbusguard.fullname" . }}-prometheus
 subjects:
-- kind: ServiceAccount
-  name: prometheus
-  namespace: {{ .Values.namespace.name }}
+  - kind: ServiceAccount
+    name: {{ include "nimbusguard.prometheus.serviceAccountName" . }}
+    namespace: {{ .Values.namespace.name }}
+{{- end }}
 ---
+# Prometheus ConfigMap
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -66,9 +58,6 @@ metadata:
   labels:
     {{- include "nimbusguard.labels" . | nindent 4 }}
     component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "2"
 data:
   prometheus.yml: |
     global:
@@ -85,7 +74,42 @@ data:
     - job_name: 'alloy-metrics'
       static_configs:
       - targets: ['alloy:8080']
+      
+    # Scrape DQN Adapter metrics
+    - job_name: 'dqn-adapter'
+      static_configs:
+      - targets: ['dqn-adapter:8080']
+      metrics_path: '/metrics'
+      scrape_interval: 5s
+      
+    # Scrape Consumer metrics  
+    - job_name: 'prometheus.scrape.nimbusguard_consumer'
+      static_configs:
+      - targets: ['consumer:8000']
+      metrics_path: '/metrics'
+      scrape_interval: 15s
 ---
+# Prometheus Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  type: {{ .Values.monitoring.prometheus.service.type }}
+  ports:
+    - port: {{ .Values.monitoring.prometheus.service.port }}
+      targetPort: 9090
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: prometheus
+---
+# Prometheus Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -93,29 +117,30 @@ metadata:
   namespace: {{ .Values.namespace.name }}
   labels:
     {{- include "nimbusguard.labels" . | nindent 4 }}
-    app.kubernetes.io/name: prometheus
     component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "3"
 spec:
   replicas: 1
   selector:
     matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/name: prometheus
   template:
     metadata:
       labels:
-        {{- include "nimbusguard.labels" . | nindent 8 }}
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/name: prometheus
         component: monitoring
     spec:
-      serviceAccountName: prometheus
+      serviceAccountName: {{ include "nimbusguard.prometheus.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
       - name: prometheus
-        image: {{ include "nimbusguard.image" (dict "repository" .Values.monitoring.prometheus.image.repository "tag" .Values.monitoring.prometheus.image.tag "Values" .Values) }}
+        image: "{{ .Values.monitoring.prometheus.image.repository }}:{{ .Values.monitoring.prometheus.image.tag }}"
+        imagePullPolicy: {{ .Values.monitoring.prometheus.image.pullPolicy }}
         ports:
         - containerPort: 9090
+          name: http
         args:
         - --config.file=/etc/prometheus/prometheus.yml
         - --storage.tsdb.path=/prometheus/
@@ -131,44 +156,24 @@ spec:
           mountPath: /prometheus
         resources:
           {{- toYaml .Values.monitoring.prometheus.resources | nindent 10 }}
-        readinessProbe:
-          httpGet:
-            path: /-/ready
-            port: 9090
-          initialDelaySeconds: 30
-          periodSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /-/healthy
-            port: 9090
-          initialDelaySeconds: 60
-          periodSeconds: 15
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
       volumes:
       - name: prometheus-config
         configMap:
           name: prometheus-config
       - name: prometheus-storage
         emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: prometheus
-  namespace: {{ .Values.namespace.name }}
-  labels:
-    {{- include "nimbusguard.labels" . | nindent 4 }}
-    app.kubernetes.io/name: prometheus
-    component: monitoring
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "4"
-spec:
-  selector:
-    app.kubernetes.io/name: prometheus
-  ports:
-  - name: http
-    port: {{ .Values.monitoring.prometheus.service.port }}
-    targetPort: 9090
-    protocol: TCP
-  type: {{ .Values.monitoring.prometheus.service.type }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
 {{- end }} 

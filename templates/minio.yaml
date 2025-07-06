@@ -1,0 +1,114 @@
+{{- if .Values.minio.enabled }}
+---
+# MinIO PersistentVolumeClaim
+{{- if .Values.minio.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pvc
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.minio.persistence.size }}
+{{- end }}
+---
+# MinIO Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: minio
+spec:
+  type: {{ .Values.minio.service.type }}
+  ports:
+    - port: {{ .Values.minio.service.ports.api }}
+      targetPort: 9000
+      protocol: TCP
+      name: api
+    - port: {{ .Values.minio.service.ports.console }}
+      targetPort: 9001
+      protocol: TCP
+      name: console
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    component: minio
+---
+# MinIO Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      component: minio
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
+        component: minio
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: minio
+        image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+        imagePullPolicy: {{ .Values.minio.image.pullPolicy }}
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - minio server /data --console-address :9001
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        env:
+        - name: MINIO_ROOT_USER
+          value: {{ .Values.minio.auth.rootUser | quote }}
+        - name: MINIO_ROOT_PASSWORD
+          value: {{ .Values.minio.auth.rootPassword | quote }}
+        {{- if .Values.minio.persistence.enabled }}
+        volumeMounts:
+        - name: minio-storage
+          mountPath: /data
+        {{- end }}
+        resources:
+          {{- toYaml .Values.minio.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+      {{- if .Values.minio.persistence.enabled }}
+      volumes:
+      - name: minio-storage
+        persistentVolumeClaim:
+          claimName: minio-pvc
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

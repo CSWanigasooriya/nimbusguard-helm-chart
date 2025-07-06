@@ -13,7 +13,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   scaleTargetRef:
-    name: consumer
+    name: {{ .Values.keda.scaledObject.target.deployment }}
   minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
   pollingInterval: {{ .Values.keda.scaledObject.pollingInterval }}
@@ -37,10 +37,17 @@ spec:
   triggers:
     {{- range .Values.keda.scaledObject.triggers }}
     - type: {{ .type }}
+      {{- if eq .type "external" }}
       metadata:
-        serverAddress: {{ include "nimbusguard.prometheusAddress" $ }}
+        scalerAddress: {{ .metadata.scalerAddress }}
+        scalerType: {{ .metadata.scalerType }}
+        threshold: {{ .metadata.threshold | quote }}
+      {{- else if eq .type "prometheus" }}
+      metadata:
+        serverAddress: http://prometheus.{{ $.Values.namespace.name }}.svc:9090
         metricName: {{ .name }}
         threshold: {{ .threshold | quote }}
         query: {{ .query | quote }}
+      {{- end }}
     {{- end }}
 {{- end }} 

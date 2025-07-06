@@ -1,0 +1,180 @@
+{{- if .Values.monitoring.beyla.enabled }}
+---
+# Beyla Service Account
+{{- if .Values.monitoring.beyla.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "nimbusguard.beyla.serviceAccountName" . }}
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+{{- end }}
+---
+# Beyla RBAC
+{{- if .Values.monitoring.beyla.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-beyla
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "nimbusguard.fullname" . }}-beyla
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "nimbusguard.fullname" . }}-beyla
+subjects:
+- kind: ServiceAccount
+  name: {{ include "nimbusguard.beyla.serviceAccountName" . }}
+  namespace: {{ .Values.namespace.name }}
+{{- end }}
+---
+# Beyla Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: beyla
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  type: {{ .Values.monitoring.beyla.service.type }}
+  ports:
+    - port: {{ .Values.monitoring.beyla.service.port }}
+      targetPort: 8080
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: beyla
+---
+# Beyla DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: beyla
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: beyla
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: beyla
+        component: monitoring
+    spec:
+      serviceAccountName: {{ include "nimbusguard.beyla.serviceAccountName" . }}
+      hostPID: true
+      hostNetwork: true
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: beyla
+        image: "{{ .Values.monitoring.beyla.image.repository }}:{{ .Values.monitoring.beyla.image.tag }}"
+        imagePullPolicy: {{ .Values.monitoring.beyla.image.pullPolicy }}
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+            - SYS_RESOURCE
+            - SYS_PTRACE
+            - NET_ADMIN
+            - NET_RAW
+            - BPF
+            - PERFMON
+        env:
+        - name: BEYLA_OPEN_PORT
+          value: "8000"  # Monitor our FastAPI consumer port
+        - name: BEYLA_SERVICE_NAMESPACE
+          value: {{ .Values.namespace.name | quote }}
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://alloy.{{ .Values.namespace.name }}.svc.cluster.local:4318"
+        - name: OTEL_EXPORTER_OTLP_PROTOCOL
+          value: "http/protobuf"
+        - name: OTEL_EXPORTER_OTLP_TIMEOUT
+          value: "30000"
+        - name: OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
+          value: "60000"
+        - name: OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
+          value: "http://alloy.{{ .Values.namespace.name }}.svc.cluster.local:4318/v1/metrics"
+        - name: BEYLA_LOG_LEVEL
+          value: {{ .Values.monitoring.beyla.logLevel | quote }}
+        - name: BEYLA_METRICS_INTERVAL
+          value: {{ .Values.monitoring.beyla.metricsInterval | quote }}
+        - name: BEYLA_BPF_BATCH_TIMEOUT
+          value: "100ms"
+        - name: BEYLA_DISCOVERY_SERVICES
+          value: "true"
+        - name: BEYLA_ROUTES_MATCHER
+          value: "path"  # Group HTTP routes by path patterns
+        # Enable OTEL exporters
+        - name: BEYLA_OTEL_TRACES_EXPORT
+          value: "true"
+        - name: BEYLA_OTEL_METRICS_EXPORT
+          value: "true"
+        resources:
+          {{- toYaml .Values.monitoring.beyla.resources | nindent 10 }}
+        volumeMounts:
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+        - name: debugfs
+          mountPath: /sys/kernel/debug
+          readOnly: true
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+      - name: debugfs
+        hostPath:
+          path: /sys/kernel/debug
+      tolerations:
+      - operator: Exists
+        effect: NoSchedule
+      - operator: Exists
+        effect: NoExecute
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

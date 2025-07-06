@@ -1,0 +1,154 @@
+{{- if .Values.monitoring.loki.enabled }}
+---
+# Loki ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+data:
+  local-config.yaml: |
+    auth_enabled: false
+    server:
+      http_listen_port: 3100
+      log_level: info
+    
+    common:
+      path_prefix: /loki
+      storage:
+        filesystem:
+          chunks_directory: /loki/chunks
+          rules_directory: /loki/rules
+      replication_factor: 1
+      ring:
+        instance_addr: 127.0.0.1
+        kvstore:
+          store: inmemory
+    
+    memberlist:
+      join_members: []
+    
+    schema_config:
+      configs:
+        - from: 2024-04-01
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    
+    storage_config:
+      tsdb_shipper:
+        active_index_directory: /loki/tsdb-index
+        cache_location: /loki/tsdb-cache
+      filesystem:
+        directory: /loki/chunks
+    
+    limits_config:
+      allow_structured_metadata: true
+      volume_enabled: true
+      retention_period: {{ .Values.monitoring.loki.retention }}
+    
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: {{ .Values.monitoring.loki.retention }}
+    
+    compactor:
+      working_directory: /loki/compactor
+      compaction_interval: 10m
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+      delete_request_store: filesystem
+    
+    # Enable native OTLP ingestion
+    distributor:
+      ring:
+        kvstore:
+          store: inmemory
+---
+# Loki Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: loki
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  type: {{ .Values.monitoring.loki.service.type }}
+  ports:
+    - port: {{ .Values.monitoring.loki.service.port }}
+      targetPort: 3100
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: loki
+---
+# Loki Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: loki
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: loki
+        component: monitoring
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: loki
+        image: "{{ .Values.monitoring.loki.image.repository }}:{{ .Values.monitoring.loki.image.tag }}"
+        imagePullPolicy: {{ .Values.monitoring.loki.image.pullPolicy }}
+        ports:
+        - containerPort: 3100
+          name: http
+        args:
+        - -config.file=/etc/loki/local-config.yaml
+        volumeMounts:
+        - name: loki-config
+          mountPath: /etc/loki
+        - name: loki-storage
+          mountPath: /loki
+        resources:
+          {{- toYaml .Values.monitoring.loki.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+      volumes:
+      - name: loki-config
+        configMap:
+          name: loki-config
+      - name: loki-storage
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

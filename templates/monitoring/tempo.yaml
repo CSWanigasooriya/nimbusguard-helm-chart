@@ -1,0 +1,136 @@
+{{- if .Values.monitoring.tempo.enabled }}
+---
+# Tempo ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+data:
+  tempo.yaml: |
+    server:
+      http_listen_port: 3200
+    
+    distributor:
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+    
+    ingester:
+      trace_idle_period: 10s
+      max_block_bytes: 1_000_000
+      max_block_duration: 5m
+    
+    compactor:
+      compaction:
+        compaction_window: 1h
+        max_compaction_objects: 1000000
+        block_retention: 1h
+        compacted_block_retention: 10m
+    
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /tmp/tempo/traces
+---
+# Tempo Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  type: {{ .Values.monitoring.tempo.service.type }}
+  ports:
+    - port: {{ .Values.monitoring.tempo.service.ports.http }}
+      targetPort: {{ .Values.monitoring.tempo.service.ports.http }}
+      protocol: TCP
+      name: http
+    - port: {{ .Values.monitoring.tempo.service.ports.otlpGrpc }}
+      targetPort: {{ .Values.monitoring.tempo.service.ports.otlpGrpc }}
+      protocol: TCP
+      name: otlp-grpc
+    - port: {{ .Values.monitoring.tempo.service.ports.otlpHttp }}
+      targetPort: {{ .Values.monitoring.tempo.service.ports.otlpHttp }}
+      protocol: TCP
+      name: otlp-http
+  selector:
+    {{- include "nimbusguard.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/name: tempo
+---
+# Tempo Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "nimbusguard.labels" . | nindent 4 }}
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nimbusguard.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: tempo
+  template:
+    metadata:
+      labels:
+        {{- include "nimbusguard.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: tempo
+        component: monitoring
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: tempo
+        image: "{{ .Values.monitoring.tempo.image.repository }}:{{ .Values.monitoring.tempo.image.tag }}"
+        imagePullPolicy: {{ .Values.monitoring.tempo.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.monitoring.tempo.service.ports.http }}
+          name: http
+        - containerPort: {{ .Values.monitoring.tempo.service.ports.otlpGrpc }}
+          name: otlp-grpc
+        - containerPort: {{ .Values.monitoring.tempo.service.ports.otlpHttp }}
+          name: otlp-http
+        args:
+        - -config.file=/etc/tempo/tempo.yaml
+        volumeMounts:
+        - name: tempo-config
+          mountPath: /etc/tempo
+        - name: tempo-storage
+          mountPath: /tmp/tempo
+        resources:
+          {{- toYaml .Values.monitoring.tempo.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 10 }}
+      volumes:
+      - name: tempo-config
+        configMap:
+          name: tempo-config
+      - name: tempo-storage
+        emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }} 

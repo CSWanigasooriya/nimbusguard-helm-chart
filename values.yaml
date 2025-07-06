@@ -1,4 +1,4 @@
-# Default values for NimbusGuard
+# NimbusGuard - Complete AI-Powered Autoscaling System
 # This is a YAML-formatted file.
 
 global:
@@ -11,7 +11,97 @@ namespace:
   create: true
   name: nimbusguard
 
-# Consumer application settings
+# === AI CONFIGURATION ===
+ai:
+  # OpenAI API configuration for LLM validation
+  openai:
+    # Set this to your OpenAI API key or use --set ai.openai.apiKey=your_key_here
+    apiKey: ""
+    model: "gpt-3.5-turbo"
+    temperature: 0.1
+    
+  # AI Features
+  enableDetailedReasoning: true
+  enableLlmValidation: false  # Disabled for speed optimization
+  reasoningLogLevel: "INFO"
+
+# === DQN ADAPTER (CORE AI COMPONENT) ===
+dqnAdapter:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: nimbusguard-dqn-adapter
+    tag: latest
+    pullPolicy: Always
+    
+  service:
+    type: ClusterIP
+    port: 8080
+    
+  # DQN Hyperparameters - Research Optimized
+  hyperparameters:
+    # Exploration Strategy
+    epsilonStart: 0.3
+    epsilonEnd: 0.05
+    epsilonDecay: 0.99  # Faster decay for research
+    
+    # Training Parameters
+    gamma: 0.99
+    learningRate: 0.0003  # Increased for faster adaptation
+    memoryCapacity: 50000
+    minBatchSize: 4       # Reduced for faster training start
+    batchSize: 16         # Reduced for more frequent training
+    targetBatchSize: 32   # Reduced target batch size
+    targetUpdateInterval: 1000
+    
+    # Neural Network Architecture
+    dqnHiddenDims: "512,256,128"
+    lstmHiddenDim: 64
+    lstmNumLayers: 2
+    lstmDropout: 0.2
+    lstmSequenceLength: 24
+    
+    # Reward System
+    stabilizationPeriodSeconds: 5  # Reduced for speed optimization
+    rewardLatencyWeight: 10.0
+    rewardReplicaCost: 0.1
+    enableImprovedRewards: true
+    
+    # Multi-Objective Reward Weights
+    rewardPerformanceWeight: 0.40  # 40%
+    rewardResourceWeight: 0.30     # 30%
+    rewardHealthWeight: 0.20       # 20%
+    rewardCostWeight: 0.10         # 10%
+    
+    # Evaluation & Monitoring
+    evaluationInterval: 300        # 5 minutes
+    enableEvaluationOutputs: true
+    saveIntervalSeconds: 300       # 5 minutes
+    
+  # Target deployment configuration
+  target:
+    deployment: "consumer"
+    namespace: "nimbusguard"
+    pollingInterval: 3
+    
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+      
+  # Service account and RBAC
+  serviceAccount:
+    create: true
+    name: ""
+    
+  rbac:
+    create: true
+
+# === CONSUMER APPLICATION ===
 consumer:
   enabled: true
   replicaCount: 1
@@ -19,7 +109,7 @@ consumer:
   image:
     repository: nimbusguard-consumer
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   
   service:
     type: ClusterIP
@@ -28,20 +118,96 @@ consumer:
   resources:
     requests:
       memory: "128Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"  # Increased for memory stress testing
+      cpu: "500m"
+
+# === REDIS (STATE STORAGE) ===
+redis:
+  enabled: true
+  
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+    
+  service:
+    type: ClusterIP
+    port: 6379
+    
+  persistence:
+    enabled: true
+    size: 1Gi
+    
+  resources:
+    requests:
+      memory: "256Mi"
       cpu: "100m"
     limits:
+      memory: "512Mi"
+      cpu: "200m"
+
+# === MINIO (MODEL STORAGE) ===
+minio:
+  enabled: true
+  
+  image:
+    repository: minio/minio
+    tag: RELEASE.2024-01-16T16-07-38Z
+    pullPolicy: IfNotPresent
+    
+  service:
+    type: ClusterIP
+    ports:
+      api: 9000
+      console: 9001
+      
+  auth:
+    rootUser: minioadmin
+    rootPassword: minioadmin
+    
+  persistence:
+    enabled: true
+    size: 10Gi
+    
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# === MCP SERVER (KUBERNETES INTEGRATION) ===
+mcpServer:
+  enabled: true
+  
+  image:
+    repository: nimbusguard-mcp-server
+    tag: latest
+    pullPolicy: Always
+    
+  service:
+    type: ClusterIP
+    port: 8080
+    
+  resources:
+    requests:
       memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
       cpu: "200m"
       
-  # OpenTelemetry configuration
-  otel:
-    serviceName: "nimbusguard-consumer"
-    version: "1.0.0"
-    tracesEndpoint: "http://alloy:4318/v1/traces"
-    metricsEndpoint: "http://alloy:4318/v1/metrics"
-    logsEndpoint: "http://alloy:4318/v1/logs"
+  serviceAccount:
+    create: true
+    name: ""
+    
+  rbac:
+    create: true
 
-# Monitoring stack configuration
+# === MONITORING STACK ===
 monitoring:
   enabled: true
   
@@ -51,6 +217,7 @@ monitoring:
     image:
       repository: prom/prometheus
       tag: v2.55.1
+      pullPolicy: IfNotPresent
     
     service:
       type: ClusterIP
@@ -61,23 +228,33 @@ monitoring:
         memory: "512Mi"
         cpu: "200m"
       limits:
-        memory: "1Gi"
-        cpu: "500m"
+        memory: "2Gi"
+        cpu: "1000m"
         
     retention: "200h"
+    
+    # Service account and RBAC
+    serviceAccount:
+      create: true
+      name: ""
+    rbac:
+      create: true
     
   # Grafana configuration
   grafana:
     enabled: true
     image:
       repository: grafana/grafana
-      tag: 12.0.1
+      tag: 11.4.0
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
       port: 3000
       
-    adminPassword: "admin"
+    auth:
+      adminUser: admin
+      adminPassword: admin
     
     resources:
       requests:
@@ -93,6 +270,7 @@ monitoring:
     image:
       repository: grafana/loki
       tag: 3.5.1
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
@@ -114,6 +292,7 @@ monitoring:
     image:
       repository: grafana/tempo
       tag: 2.8.1
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
@@ -136,6 +315,7 @@ monitoring:
     image:
       repository: grafana/alloy
       tag: v1.9.0
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
@@ -152,17 +332,29 @@ monitoring:
         memory: "512Mi"
         cpu: "300m"
         
+    # Service account and RBAC
+    serviceAccount:
+      create: true
+      name: ""
+    rbac:
+      create: true
+        
   # Beyla (eBPF auto-instrumentation) configuration
   beyla:
     enabled: true
     image:
       repository: grafana/beyla
       tag: 1.9.3
+      pullPolicy: IfNotPresent
       
     # Ports to monitor
     openPort: "8000"
     logLevel: "debug"
     metricsInterval: "30s"
+    
+    service:
+      type: ClusterIP
+      port: 8080
     
     resources:
       requests:
@@ -172,12 +364,20 @@ monitoring:
         memory: "200Mi"
         cpu: "200m"
         
+    # Service account and RBAC
+    serviceAccount:
+      create: true
+      name: ""
+    rbac:
+      create: true
+        
   # Node Exporter configuration
   nodeExporter:
     enabled: true
     image:
       repository: prom/node-exporter
       tag: v1.9.0
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
@@ -197,6 +397,7 @@ monitoring:
     image:
       repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
       tag: v2.15.0
+      pullPolicy: IfNotPresent
       
     service:
       type: ClusterIP
@@ -211,60 +412,75 @@ monitoring:
       limits:
         memory: "128Mi"
         cpu: "100m"
+        
+    # Service account and RBAC
+    serviceAccount:
+      create: true
+      name: ""
+    rbac:
+      create: true
 
-# KEDA (Kubernetes Event Driven Autoscaling) configuration
+# === KEDA (KUBERNETES EVENT DRIVEN AUTOSCALING) ===
 keda:
   enabled: true
   
   # ScaledObject configuration
   scaledObject:
     enabled: true
-    name: consumer-scaledobject
+    name: nimbusguard-scaler
     
+    # Target deployment
+    target:
+      deployment: consumer
+      
     # Scaling parameters
     minReplicaCount: 1
     maxReplicaCount: 15
-    pollingInterval: 30
-    cooldownPeriod: 300
+    pollingInterval: 5  # Fast polling for competitive response
+    cooldownPeriod: 30  # Faster cooldown for research
     
     # Scaling behavior
     scaleUp:
-      stabilizationWindowSeconds: 60
-      maxPercentValue: 50
-      periodSeconds: 60
+      stabilizationWindowSeconds: 30
+      maxPercentValue: 100
+      periodSeconds: 15
       
     scaleDown:
-      stabilizationWindowSeconds: 300
+      stabilizationWindowSeconds: 60
       maxPercentValue: 10
-      periodSeconds: 60
+      periodSeconds: 15
     
-    # Prometheus-based triggers
+    # DQN-based external scaler
     triggers:
-      - name: http_requests_rate
-        type: prometheus
-        threshold: "5"
-        query: "sum(rate(http_requests_total{instance=\"consumer:8000\"}[1m]))"
-        
-      - name: http_request_duration_avg
-        type: prometheus
-        threshold: "2"
-        query: "sum(rate(http_request_duration_seconds_sum{instance=\"consumer:8000\"}[1m])) / sum(rate(http_request_duration_seconds_count{instance=\"consumer:8000\"}[1m]))"
-        
-      - name: python_gc_rate
-        type: prometheus
-        threshold: "0.5"
-        query: "sum(rate(python_gc_collections_total{instance=\"consumer:8000\"}[1m]))"
+      - name: dqn-external-scaler
+        type: external
+        metadata:
+          scalerAddress: "dqn-adapter.nimbusguard.svc.cluster.local:8080"
+          scalerType: "dqn-scaler"
+          threshold: "1"
 
-# Load Generator configuration
+# === DASHBOARDS ===
+dashboards:
+  enabled: true
+  
+  # Research dashboards for evaluation
+  research:
+    enabled: true
+    
+  # Operational dashboards
+  operational:
+    enabled: true
+
+# === LOAD GENERATOR ===
 loadGenerator:
   enabled: false  # Disabled by default, enable for testing
   
   image:
     repository: nimbusguard-generator
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     
-  # Available test types: light, medium, heavy, sustained, burst, cpu_stress, memory_stress
+  # Available test types
   testTypes:
     light:
       enabled: false
@@ -296,7 +512,7 @@ loadGenerator:
       memory: "256Mi"
       cpu: "200m"
 
-# Security and RBAC
+# === SECURITY AND RBAC ===
 rbac:
   create: true
 
@@ -304,30 +520,44 @@ serviceAccount:
   create: true
   automount: true
 
-# Pod Security
-podSecurityContext: {}
+# === POD SECURITY ===
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 2000
 
-securityContext: {}
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+    - ALL
 
-# Node selection
+# === NODE SELECTION ===
 nodeSelector: {}
 
 tolerations: []
 
 affinity: {}
 
-# Startup probes and health checks
+# === HEALTH CHECKS ===
 startupProbe:
   enabled: true
   initialDelaySeconds: 30
   periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 10
 
 livenessProbe:
   enabled: true
   initialDelaySeconds: 30
-  periodSeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
 
 readinessProbe:
   enabled: true
   initialDelaySeconds: 5
-  periodSeconds: 5 
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3 
