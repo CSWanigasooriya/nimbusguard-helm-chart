@@ -412,7 +412,7 @@ monitoring:
       limits:
         memory: "128Mi"
         cpu: "100m"
-        
+
     # Service account and RBAC
     serviceAccount:
       create: true
@@ -432,7 +432,7 @@ keda:
     # Target deployment
     target:
       deployment: consumer
-      
+    
     # Scaling parameters
     minReplicaCount: 1
     maxReplicaCount: 15
