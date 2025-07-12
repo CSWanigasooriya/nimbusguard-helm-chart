@@ -148,8 +148,7 @@ spec:
         # === EXPLAINABLE AI CONFIGURATION ===
         - name: ENABLE_DETAILED_REASONING
           value: {{ .Values.ai.enableDetailedReasoning | quote }}
-        - name: REASONING_LOG_LEVEL
-          value: {{ .Values.ai.reasoningLogLevel | quote }}
+
         - name: ENABLE_LLM_VALIDATION
           value: {{ .Values.ai.enableLlmValidation | quote }}
         
@@ -164,7 +163,7 @@ spec:
         # === DQN TRAINING HYPERPARAMETERS ===
         - name: GAMMA
           value: {{ .Values.dqnAdapter.hyperparameters.gamma | quote }}
-        - name: LR
+        - name: LEARNING_RATE
           value: {{ .Values.dqnAdapter.hyperparameters.learningRate | quote }}
         - name: MEMORY_CAPACITY
           value: {{ .Values.dqnAdapter.hyperparameters.memoryCapacity | quote }}
@@ -180,34 +179,15 @@ spec:
         # === NEURAL NETWORK ARCHITECTURE ===
         - name: DQN_HIDDEN_DIMS
           value: {{ .Values.dqnAdapter.hyperparameters.dqnHiddenDims | quote }}
-        - name: LSTM_HIDDEN_DIM
-          value: {{ .Values.dqnAdapter.hyperparameters.lstmHiddenDim | quote }}
-        - name: LSTM_NUM_LAYERS
-          value: {{ .Values.dqnAdapter.hyperparameters.lstmNumLayers | quote }}
-        - name: LSTM_DROPOUT
-          value: {{ .Values.dqnAdapter.hyperparameters.lstmDropout | quote }}
-        - name: LSTM_SEQUENCE_LENGTH
-          value: {{ .Values.dqnAdapter.hyperparameters.lstmSequenceLength | quote }}
         
         # === REWARD SYSTEM CONFIGURATION ===
         - name: STABILIZATION_PERIOD_SECONDS
           value: {{ .Values.dqnAdapter.hyperparameters.stabilizationPeriodSeconds | quote }}
-        - name: REWARD_LATENCY_WEIGHT
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardLatencyWeight | quote }}
-        - name: REWARD_REPLICA_COST
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardReplicaCost | quote }}
-        - name: ENABLE_IMPROVED_REWARDS
-          value: {{ .Values.dqnAdapter.hyperparameters.enableImprovedRewards | quote }}
+
+
         
-        # === MULTI-OBJECTIVE REWARD WEIGHTS ===
-        - name: REWARD_PERFORMANCE_WEIGHT
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardPerformanceWeight | quote }}
-        - name: REWARD_RESOURCE_WEIGHT
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardResourceWeight | quote }}
-        - name: REWARD_HEALTH_WEIGHT
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardHealthWeight | quote }}
-        - name: REWARD_COST_WEIGHT
-          value: {{ .Values.dqnAdapter.hyperparameters.rewardCostWeight | quote }}
+        # === LLM REWARD SYSTEM ===
+        # Pure LLM-based rewards - no hardcoded weights needed
         
         # === EVALUATION & MONITORING ===
         - name: EVALUATION_INTERVAL

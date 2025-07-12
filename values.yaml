@@ -13,17 +13,17 @@ namespace:
 
 # === AI CONFIGURATION ===
 ai:
-  # OpenAI API configuration for LLM validation
+  # OpenAI API configuration for LLM validation (REQUIRED)
   openai:
-    # Set this to your OpenAI API key or use --set ai.openai.apiKey=your_key_here
+    # REQUIRED: Set this to your OpenAI API key or use --set ai.openai.apiKey=your_key_here
     apiKey: ""
-    model: "gpt-3.5-turbo"
+    model: "gpt-4-turbo"
     temperature: 0.1
     
   # AI Features
   enableDetailedReasoning: true
-  enableLlmValidation: false  # Disabled for speed optimization
-  reasoningLogLevel: "INFO"
+  enableLlmValidation: true  # REQUIRED - system cannot function without LLM validation
+
 
 # === DQN ADAPTER (CORE AI COMPONENT) ===
 dqnAdapter:
@@ -50,29 +50,20 @@ dqnAdapter:
     gamma: 0.99
     learningRate: 0.0003  # Increased for faster adaptation
     memoryCapacity: 50000
-    minBatchSize: 4       # Reduced for faster training start
+    minBatchSize: 2       # Further reduced for immediate training start
     batchSize: 16         # Reduced for more frequent training
     targetBatchSize: 32   # Reduced target batch size
     targetUpdateInterval: 1000
     
     # Neural Network Architecture
-    dqnHiddenDims: "512,256,128"
-    lstmHiddenDim: 64
-    lstmNumLayers: 2
-    lstmDropout: 0.2
-    lstmSequenceLength: 24
+    dqnHiddenDims: "64,32"
     
     # Reward System
     stabilizationPeriodSeconds: 5  # Reduced for speed optimization
-    rewardLatencyWeight: 10.0
-    rewardReplicaCost: 0.1
-    enableImprovedRewards: true
     
-    # Multi-Objective Reward Weights
-    rewardPerformanceWeight: 0.40  # 40%
-    rewardResourceWeight: 0.30     # 30%
-    rewardHealthWeight: 0.20       # 20%
-    rewardCostWeight: 0.10         # 10%
+
+    
+    # LLM Reward System (pure LLM-based, no hardcoded weights)
     
     # Evaluation & Monitoring
     evaluationInterval: 300        # 5 minutes
