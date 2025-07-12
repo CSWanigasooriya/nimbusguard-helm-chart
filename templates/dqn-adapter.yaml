@@ -190,10 +190,6 @@ spec:
         # Pure LLM-based rewards - no hardcoded weights needed
         
         # === EVALUATION & MONITORING ===
-        - name: EVALUATION_INTERVAL
-          value: {{ .Values.dqnAdapter.hyperparameters.evaluationInterval | quote }}
-        - name: ENABLE_EVALUATION_OUTPUTS
-          value: {{ .Values.dqnAdapter.hyperparameters.enableEvaluationOutputs | quote }}
         - name: SAVE_INTERVAL_SECONDS
           value: {{ .Values.dqnAdapter.hyperparameters.saveIntervalSeconds | quote }}
         
